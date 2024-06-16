@@ -1,0 +1,129 @@
+function ionospheric_delay_ionex(ionex_file, satellite_positions, frequency)
+    % ionex_file: path to the IONEX file
+    % satellite_positions: Nx3 matrix with columns [time, lat, lon]
+    % frequency: signal frequency in Hz
+
+    % Read IONEX file
+    ionex_data = read_ionex(ionex_file);
+    
+    % Extract TEC grid data
+    tec_grid = ionex_data.tec;
+    lat_grid = ionex_data.lat;
+    lon_grid = ionex_data.lon;
+    
+    % Initialize results
+    ionospheric_delays = zeros(size(satellite_positions, 1), 1);
+
+    % Compute ionospheric delay for each position
+    for i = 1:size(satellite_positions, 1)
+        time = satellite_positions(i, 1);
+        lat = satellite_positions(i, 2);
+        lon = satellite_positions(i, 3);
+
+        % Interpolate TEC value at satellite position
+        tec_value = interpolate_tec(tec_grid, lat_grid, lon_grid, lat, lon);
+
+        % Compute ionospheric delay
+        ionospheric_delays(i) = 40.3 * tec_value / (frequency^2);
+    end
+
+    % Display results
+    disp('Ionospheric Delays (s):');
+    disp(ionospheric_delays);
+end
+
+function ionex_data = read_ionex(filename)
+    % Function to read IONEX file and extract TEC data
+    % This is a simplified reader and may need modifications based on the IONEX format
+
+    % Open the file
+    fid = fopen(filename, 'r');
+    
+    % Initialize variables
+    ionex_data.tec = [];
+    ionex_data.lat = [];
+    ionex_data.lon = [];
+    
+    % Read the file line by line
+    while ~feof(fid)
+        line = fgetl(fid);
+        
+        % Extract TEC grid data (simplified parsing)
+        if contains(line, 'LAT/LON1/LON2/DLON/H')
+            % Parse header for latitude, longitude range and step size
+            header = sscanf(line, '%f %f %f %f %f');
+            lat_start = header(1);
+            lat_end = header(2);
+            lon_start = header(3);
+            lon_end = header(4);
+            dlon = header(5);
+            
+            % Create latitude and longitude grids
+            ionex_data.lat = lat_start:1:lat_end;
+            ionex_data.lon = lon_start:dlon:lon_end;
+        elseif contains(line, 'START OF TEC MAP')
+            % Read TEC map
+            tec_map = [];
+            for lat_idx = 1:length(ionex_data.lat)
+                line = fgetl(fid);
+                tec_row = sscanf(line, '%f');
+                tec_map(lat_idx, :) = tec_row;
+            end
+            ionex_data.tec = tec_map;
+        end
+    end
+    
+    % Close the file
+    fclose(fid);
+end
+
+function tec_value = interpolate_tec(tec_grid, lat_grid, lon_grid, lat, lon)
+    % Function to interpolate TEC value at given latitude and longitude
+    % Using bilinear interpolation
+
+    % Find indices for interpolation
+    lat_idx = find(lat_grid <= lat, 1, 'last');
+    lon_idx = find(lon_grid <= lon, 1, 'last');
+
+    % Boundary conditions
+    if lat_idx == length(lat_grid)
+        lat_idx = lat_idx - 1;
+    end
+    if lon_idx == length(lon_grid)
+        lon_idx = lon_idx - 1;
+    end
+
+    % Four surrounding points
+    lat1 = lat_grid(lat_idx);
+    lat2 = lat_grid(lat_idx + 1);
+    lon1 = lon_grid(lon_idx);
+    lon2 = lon_grid(lon_idx + 1);
+
+    Q11 = tec_grid(lat_idx, lon_idx);
+    Q12 = tec_grid(lat_idx, lon_idx + 1);
+    Q21 = tec_grid(lat_idx + 1, lon_idx);
+    Q22 = tec_grid(lat_idx + 1, lon_idx + 1);
+
+    % Bilinear interpolation
+    tec_value = (Q11 * (lat2 - lat) * (lon2 - lon) + ...
+                 Q21 * (lat - lat1) * (lon2 - lon) + ...
+                 Q12 * (lat2 - lat) * (lon - lon1) + ...
+                 Q22 * (lat - lat1) * (lon - lon1)) / ...
+                ((lat2 - lat1) * (lon2 - lon1));
+end
+
+% Define satellite positions (time, latitude, longitude)
+satellite_positions = [
+    0, 45.0, -75.0;
+    1, 46.0, -74.0;
+    2, 47.0, -73.0
+];
+
+% Define signal frequency (e.g., GPS L1 frequency)
+frequency = 1.57542e9; % Hz
+
+% Path to IONEX file
+ionex_file = 'path/to/your/ionex_file.19i';
+
+% Compute ionospheric delays
+ionospheric_delay_ionex(ionex_file, satellite_positions, frequency);
